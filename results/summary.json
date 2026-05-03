@@ -1,0 +1,80 @@
+{
+  "dataset_summary": {
+    "rows": 756,
+    "features": 753,
+    "class_counts": {
+      "0": 192,
+      "1": 564
+    },
+    "train_rows": 604,
+    "test_rows": 152
+  },
+  "selected_feature_count": 40,
+  "selected_features": [
+    "std_delta_delta_log_energy",
+    "std_delta_log_energy",
+    "std_6th_delta_delta",
+    "tqwt_entropy_log_dec_12",
+    "std_8th_delta_delta",
+    "tqwt_TKEO_std_dec_13",
+    "std_9th_delta_delta",
+    "tqwt_TKEO_mean_dec_12",
+    "std_7th_delta_delta",
+    "std_6th_delta",
+    "mean_MFCC_2nd_coef",
+    "tqwt_entropy_shannon_dec_13",
+    "tqwt_minValue_dec_13",
+    "tqwt_TKEO_mean_dec_13",
+    "tqwt_stdValue_dec_12",
+    "rapJitter",
+    "std_8th_delta",
+    "tqwt_entropy_log_dec_16",
+    "tqwt_entropy_log_dec_13",
+    "tqwt_entropy_log_dec_35",
+    "tqwt_stdValue_dec_13",
+    "tqwt_TKEO_std_dec_12",
+    "tqwt_energy_dec_27",
+    "std_7th_delta",
+    "minIntensity",
+    "tqwt_energy_dec_26",
+    "tqwt_kurtosisValue_dec_18",
+    "apq11Shimmer",
+    "tqwt_entropy_log_dec_11",
+    "tqwt_maxValue_dec_12",
+    "tqwt_entropy_shannon_dec_12",
+    "std_10th_delta_delta",
+    "tqwt_medianValue_dec_8",
+    "tqwt_entropy_shannon_dec_14",
+    "tqwt_TKEO_mean_dec_16",
+    "tqwt_medianValue_dec_26",
+    "tqwt_entropy_log_dec_27",
+    "tqwt_TKEO_std_dec_7",
+    "tqwt_stdValue_dec_15",
+    "locAbsJitter"
+  ],
+  "real_best_model": "RandomForest",
+  "real_best_metrics": {
+    "accuracy": 0.8355263157894737,
+    "balanced_accuracy": 0.7718402541411391,
+    "precision": 0.8793103448275862,
+    "recall": 0.9026548672566371,
+    "f1": 0.8908296943231441,
+    "roc_auc": 0.8869979577944179
+  },
+  "synthetic_best_model": "SVM",
+  "synthetic_best_metrics": {
+    "accuracy": 0.7302631578947368,
+    "balanced_accuracy": 0.6590651236668936,
+    "precision": 0.8272727272727273,
+    "recall": 0.8053097345132744,
+    "f1": 0.8161434977578476,
+    "roc_auc": 0.7243022464261403
+  },
+  "synthetic_quality_summary": {
+    "mean_ks_stat": 0.405794701986755,
+    "max_ks_stat": 0.8741721854304636,
+    "mean_normalized_wasserstein": 0.8976530548660374,
+    "correlation_mae": 0.30940418837290673
+  },
+  "ctgan_epochs": 150
+}
