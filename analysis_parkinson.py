@@ -17,15 +17,16 @@ import pandas as pd
 import torch
 from ctgan import CTGAN
 from scipy.stats import ks_2samp, wasserstein_distance
+from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
     balanced_accuracy_score,
+    confusion_matrix,
     f1_score,
     precision_score,
-    recall_score,
     roc_auc_score,
     roc_curve,
 )
@@ -40,10 +41,38 @@ from sklearn.feature_selection import mutual_info_classif
 SEED = 42
 TEST_SIZE = 0.2
 FEATURE_CANDIDATES = [10, 20, 30, 40, 60]
+ROBUSTNESS_SEEDS = [13, 42, 97]
 SCORING = {
     "balanced_accuracy": "balanced_accuracy",
     "f1": "f1",
     "roc_auc": "roc_auc",
+}
+STRATEGY_LABELS = {
+    "real": "Datos reales",
+    "synthetic": "CTGAN sintético",
+    "mixed": "Real + sintético",
+}
+FEATURE_FAMILY_DESCRIPTIONS = {
+    "TQWT / wavelet": (
+        "Describe patrones multiescala en la voz; captura irregularidades temporales y espectrales "
+        "que suelen aparecer cuando la fonación pierde estabilidad."
+    ),
+    "MFCC / energía / dinámicas": (
+        "Resume la envolvente espectral y su evolución temporal; refleja cambios finos en timbre, "
+        "articulación y control motor de la voz."
+    ),
+    "Jitter / shimmer": (
+        "Mide microvariaciones ciclo a ciclo en frecuencia y amplitud; se asocia con inestabilidad "
+        "de los pliegues vocales."
+    ),
+    "Intensidad": (
+        "Caracteriza la energía y la proyección de la señal, útil para detectar alteraciones globales "
+        "en la emisión vocal."
+    ),
+    "Otros descriptores vocales": (
+        "Incluye rasgos acústicos secundarios que aportan contexto adicional, aunque no dominan la "
+        "decisión del modelo."
+    ),
 }
 
 
@@ -60,6 +89,8 @@ class StrategyResult:
     best_predictions: np.ndarray
     best_probabilities: np.ndarray
     best_metrics: dict[str, float]
+    holdout_best_model_name: str
+    holdout_best_metrics: dict[str, float]
 
 
 def set_seed(seed: int) -> None:
@@ -98,6 +129,22 @@ def parse_args() -> argparse.Namespace:
         default=150,
         help="Number of CTGAN training epochs.",
     )
+    parser.add_argument(
+        "--robustness-seeds",
+        nargs="*",
+        type=int,
+        default=ROBUSTNESS_SEEDS,
+        help="Random seeds used in the lightweight robustness analysis.",
+    )
+    parser.add_argument(
+        "--robustness-ctgan-epochs",
+        type=int,
+        default=75,
+        help=(
+            "CTGAN epochs used during the repeated-seed robustness analysis. "
+            "This is lighter than the main experiment to keep runtime bounded."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -111,20 +158,24 @@ def load_dataset(data_path: Path) -> tuple[pd.DataFrame, pd.Series]:
     return df, y
 
 
-def rank_features(X_train: pd.DataFrame, y_train: pd.Series) -> pd.DataFrame:
+def rank_features(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    random_seed: int = SEED,
+) -> pd.DataFrame:
     discrete_mask = np.array([column == "gender" for column in X_train.columns])
     mutual_info = mutual_info_classif(
         X_train,
         y_train,
         discrete_features=discrete_mask,
-        random_state=SEED,
+        random_state=random_seed,
     )
 
     forest = RandomForestClassifier(
         n_estimators=500,
         class_weight="balanced_subsample",
         n_jobs=-1,
-        random_state=SEED,
+        random_state=random_seed,
     )
     forest.fit(X_train, y_train)
 
@@ -155,8 +206,9 @@ def choose_feature_count(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     ranking: pd.DataFrame,
+    random_seed: int = SEED,
 ) -> tuple[int, pd.DataFrame]:
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
     selector_model = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -166,7 +218,7 @@ def choose_feature_count(
                     C=1.0,
                     class_weight="balanced",
                     max_iter=5000,
-                    random_state=SEED,
+                    random_state=random_seed,
                 ),
             ),
         ]
@@ -199,7 +251,7 @@ def choose_feature_count(
     return best_feature_count, summary
 
 
-def build_model_spaces() -> dict[str, dict[str, Any]]:
+def build_model_spaces(random_seed: int = SEED) -> dict[str, dict[str, Any]]:
     return {
         "LogisticRegression": {
             "estimator": Pipeline(
@@ -210,7 +262,7 @@ def build_model_spaces() -> dict[str, dict[str, Any]]:
                         LogisticRegression(
                             class_weight="balanced",
                             max_iter=5000,
-                            random_state=SEED,
+                            random_state=random_seed,
                         ),
                     ),
                 ]
@@ -226,7 +278,7 @@ def build_model_spaces() -> dict[str, dict[str, Any]]:
                         SVC(
                             class_weight="balanced",
                             probability=True,
-                            random_state=SEED,
+                            random_state=random_seed,
                         ),
                     ),
                 ]
@@ -254,7 +306,7 @@ def build_model_spaces() -> dict[str, dict[str, Any]]:
             "estimator": RandomForestClassifier(
                 class_weight="balanced_subsample",
                 n_jobs=-1,
-                random_state=SEED,
+                random_state=random_seed,
             ),
             "param_grid": {
                 "n_estimators": [300, 500],
@@ -264,7 +316,7 @@ def build_model_spaces() -> dict[str, dict[str, Any]]:
             },
         },
         "GradientBoosting": {
-            "estimator": GradientBoostingClassifier(random_state=SEED),
+            "estimator": GradientBoostingClassifier(random_state=random_seed),
             "param_grid": {
                 "n_estimators": [100, 200],
                 "learning_rate": [0.03, 0.05, 0.1],
@@ -279,11 +331,15 @@ def evaluate_predictions(
     y_pred: np.ndarray,
     y_prob: np.ndarray,
 ) -> dict[str, float]:
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    sensitivity = tp / max(tp + fn, 1)
+    specificity = tn / max(tn + fp, 1)
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
         "precision": float(precision_score(y_true, y_pred, zero_division=0)),
-        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "sensitivity": float(sensitivity),
+        "specificity": float(specificity),
         "f1": float(f1_score(y_true, y_pred, zero_division=0)),
         "roc_auc": float(roc_auc_score(y_true, y_prob)),
     }
@@ -295,9 +351,10 @@ def tune_and_evaluate_models(
     y_train: pd.Series,
     X_test: pd.DataFrame,
     y_test: pd.Series,
+    random_seed: int = SEED,
 ) -> StrategyResult:
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
-    model_spaces = build_model_spaces()
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_seed)
+    model_spaces = build_model_spaces(random_seed=random_seed)
 
     rows: list[dict[str, Any]] = []
     fitted_models: dict[str, Any] = {}
@@ -350,7 +407,8 @@ def tune_and_evaluate_models(
             "test_accuracy": metrics["accuracy"],
             "test_balanced_accuracy": metrics["balanced_accuracy"],
             "test_precision": metrics["precision"],
-            "test_recall": metrics["recall"],
+            "test_sensitivity": metrics["sensitivity"],
+            "test_specificity": metrics["specificity"],
             "test_f1": metrics["f1"],
             "test_roc_auc": metrics["roc_auc"],
             "best_params": json.dumps(search.best_params_, sort_keys=True),
@@ -362,6 +420,11 @@ def tune_and_evaluate_models(
         ascending=False,
     ).reset_index(drop=True)
     best_model_name = str(summary.iloc[0]["model"])
+    holdout_best_summary = summary.sort_values(
+        by=["test_balanced_accuracy", "test_roc_auc", "cv_balanced_accuracy_mean"],
+        ascending=False,
+    ).reset_index(drop=True)
+    holdout_best_model_name = str(holdout_best_summary.iloc[0]["model"])
     return StrategyResult(
         name=strategy_name,
         summary=summary,
@@ -370,6 +433,8 @@ def tune_and_evaluate_models(
         best_predictions=predictions[best_model_name],
         best_probabilities=probabilities[best_model_name],
         best_metrics=metrics_by_model[best_model_name],
+        holdout_best_model_name=holdout_best_model_name,
+        holdout_best_metrics=metrics_by_model[holdout_best_model_name],
     )
 
 
@@ -377,7 +442,9 @@ def synthesize_training_data(
     X_train_selected: pd.DataFrame,
     y_train: pd.Series,
     epochs: int,
+    random_seed: int = SEED,
 ) -> pd.DataFrame:
+    set_seed(random_seed)
     training_frame = X_train_selected.copy()
     training_frame["class"] = y_train.to_numpy()
 
@@ -463,6 +530,281 @@ def compute_synthetic_quality(
     return quality, summary
 
 
+def classify_feature_family(feature_name: str) -> str:
+    lower = feature_name.lower()
+    if lower.startswith("tqwt_"):
+        return "TQWT / wavelet"
+    if "jitter" in lower or "shimmer" in lower:
+        return "Jitter / shimmer"
+    if "mfcc" in lower or "delta" in lower or "log_energy" in lower:
+        return "MFCC / energía / dinámicas"
+    if "intensity" in lower:
+        return "Intensidad"
+    return "Otros descriptores vocales"
+
+
+def summarize_feature_families(selected_feature_table: pd.DataFrame) -> pd.DataFrame:
+    enriched = selected_feature_table.copy()
+    enriched["family"] = enriched["feature"].map(classify_feature_family)
+    summary = (
+        enriched.groupby("family", as_index=False)
+        .agg(
+            count=("feature", "count"),
+            mean_combined_score=("combined_score", "mean"),
+            features=("feature", lambda values: ", ".join(values)),
+        )
+        .sort_values(by=["count", "mean_combined_score"], ascending=[False, False])
+        .reset_index(drop=True)
+    )
+    summary["share"] = summary["count"] / max(int(enriched.shape[0]), 1)
+    summary["description"] = summary["family"].map(FEATURE_FAMILY_DESCRIPTIONS)
+    return summary[
+        ["family", "count", "share", "mean_combined_score", "description", "features"]
+    ]
+
+
+def build_estimator_from_selection(
+    model_name: str,
+    best_params_json: str,
+    random_seed: int,
+) -> Any:
+    estimator = clone(build_model_spaces(random_seed=random_seed)[model_name]["estimator"])
+    estimator.set_params(**json.loads(best_params_json))
+    return estimator
+
+
+def evaluate_fixed_model(
+    model_name: str,
+    best_params_json: str,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    random_seed: int,
+) -> dict[str, float]:
+    estimator = build_estimator_from_selection(model_name, best_params_json, random_seed)
+    estimator.fit(X_train, y_train)
+    predictions = estimator.predict(X_test)
+    probabilities = estimator.predict_proba(X_test)[:, 1]
+    return evaluate_predictions(y_test, predictions, probabilities)
+
+
+def run_robustness_analysis(
+    X: pd.DataFrame,
+    y: pd.Series,
+    selected_feature_count: int,
+    strategy_specs: dict[str, dict[str, str]],
+    test_size: float,
+    ctgan_epochs: int,
+    seeds: list[int],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows: list[dict[str, Any]] = []
+
+    for seed in seeds:
+        log(f"[robustness] Evaluating seed {seed}...")
+        set_seed(seed)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            stratify=y,
+            random_state=seed,
+        )
+
+        ranking = rank_features(X_train, y_train, random_seed=seed)
+        selected_features = ranking.head(selected_feature_count)["feature"].tolist()
+        X_train_selected = X_train[selected_features].copy()
+        X_test_selected = X_test[selected_features].copy()
+
+        real_metrics = evaluate_fixed_model(
+            strategy_specs["real"]["model"],
+            strategy_specs["real"]["best_params"],
+            X_train_selected,
+            y_train,
+            X_test_selected,
+            y_test,
+            random_seed=seed,
+        )
+
+        synthetic_train = synthesize_training_data(
+            X_train_selected,
+            y_train,
+            epochs=ctgan_epochs,
+            random_seed=seed,
+        )
+        X_synthetic = synthetic_train[selected_features].copy()
+        y_synthetic = synthetic_train["class"].astype(int)
+
+        synthetic_metrics = evaluate_fixed_model(
+            strategy_specs["synthetic"]["model"],
+            strategy_specs["synthetic"]["best_params"],
+            X_synthetic,
+            y_synthetic,
+            X_test_selected,
+            y_test,
+            random_seed=seed,
+        )
+
+        X_mixed = pd.concat([X_train_selected, X_synthetic], ignore_index=True)
+        y_mixed = pd.concat([y_train.reset_index(drop=True), y_synthetic], ignore_index=True)
+        mixed_metrics = evaluate_fixed_model(
+            strategy_specs["mixed"]["model"],
+            strategy_specs["mixed"]["best_params"],
+            X_mixed,
+            y_mixed,
+            X_test_selected,
+            y_test,
+            random_seed=seed,
+        )
+
+        for strategy_name, metrics in {
+            "real": real_metrics,
+            "synthetic": synthetic_metrics,
+            "mixed": mixed_metrics,
+        }.items():
+            row = {
+                "seed": seed,
+                "strategy": strategy_name,
+                "model": strategy_specs[strategy_name]["model"],
+            }
+            row.update(metrics)
+            rows.append(row)
+
+    runs = pd.DataFrame(rows)
+
+    summary_rows: list[dict[str, Any]] = []
+    metric_names = [
+        "accuracy",
+        "balanced_accuracy",
+        "precision",
+        "sensitivity",
+        "specificity",
+        "f1",
+        "roc_auc",
+    ]
+    for strategy_name, group in runs.groupby("strategy"):
+        row = {
+            "strategy": strategy_name,
+            "model": str(group["model"].iloc[0]),
+        }
+        for metric_name in metric_names:
+            row[f"{metric_name}_mean"] = float(group[metric_name].mean())
+            row[f"{metric_name}_std"] = float(group[metric_name].std(ddof=0))
+        summary_rows.append(row)
+
+    summary = pd.DataFrame(summary_rows).sort_values(
+        by=["balanced_accuracy_mean", "roc_auc_mean"],
+        ascending=False,
+    ).reset_index(drop=True)
+    return runs, summary
+
+
+def round_metric_dict(metrics: dict[str, float], digits: int = 4) -> dict[str, float]:
+    return {key: round(float(value), digits) for key, value in metrics.items()}
+
+
+def dataframe_records(frame: pd.DataFrame, digits: int = 4) -> list[dict[str, Any]]:
+    rounded = frame.copy()
+    numeric_columns = rounded.select_dtypes(include=[np.number]).columns
+    rounded[numeric_columns] = rounded[numeric_columns].round(digits)
+    return json.loads(rounded.to_json(orient="records"))
+
+
+def make_relative_path(path: Path, base_dir: Path) -> str:
+    try:
+        return str(path.relative_to(base_dir)).replace("\\", "/")
+    except ValueError:
+        return path.name
+
+
+def serialize_strategy_result(result: StrategyResult) -> dict[str, Any]:
+    return {
+        "selected_model_by_cv": result.best_model_name,
+        "selected_metrics": round_metric_dict(result.best_metrics),
+        "holdout_best_model": result.holdout_best_model_name,
+        "holdout_best_metrics": round_metric_dict(result.holdout_best_metrics),
+        "summary_table": dataframe_records(result.summary),
+    }
+
+
+def write_app_data(
+    base_dir: Path,
+    output_dir: Path,
+    dataset_summary: dict[str, Any],
+    selected_feature_table: pd.DataFrame,
+    feature_family_summary: pd.DataFrame,
+    strategy_results: dict[str, StrategyResult],
+    synthetic_quality: pd.DataFrame,
+    synthetic_quality_summary: dict[str, float],
+    robustness_summary: pd.DataFrame,
+    robustness_seeds: list[int],
+    robustness_ctgan_epochs: int,
+) -> None:
+    top_features = selected_feature_table.head(12).copy()
+    top_features["family"] = top_features["feature"].map(classify_feature_family)
+    top_drift = synthetic_quality.head(6)[
+        ["feature", "ks_stat", "wasserstein_normalized"]
+    ].copy()
+    top_drift["family"] = top_drift["feature"].map(classify_feature_family)
+
+    figures_dir = output_dir / "figures"
+    app_data = {
+        "project": {
+            "title": "ParkinVoice: Parkinson detection from voice descriptors",
+            "subtitle": (
+                "Comparative analysis between classical models trained on real data, purely synthetic "
+                "CTGAN data, and a mixed scenario."
+            ),
+        },
+        "dataset": dataset_summary,
+        "methodology": [
+            "Estratificar train/test antes de cualquier selección de variables.",
+            "Rankear variables con información mutua e importancia de RandomForest.",
+            "Seleccionar un subconjunto compacto de rasgos vocales.",
+            "Comparar entrenamiento con datos reales, sintéticos y mixtos sobre el mismo test real.",
+            "Analizar deriva de CTGAN y estabilidad de los resultados con varias semillas.",
+        ],
+        "figures": {
+            "featureRanking": make_relative_path(figures_dir / "feature_ranking.png", base_dir),
+            "featureCount": make_relative_path(figures_dir / "feature_count_selection.png", base_dir),
+            "featureFamilies": make_relative_path(figures_dir / "feature_family_summary.png", base_dir),
+            "modelComparison": make_relative_path(figures_dir / "model_comparison.png", base_dir),
+            "rocCurves": make_relative_path(figures_dir / "roc_curves.png", base_dir),
+            "confusionMatrices": make_relative_path(figures_dir / "confusion_matrices.png", base_dir),
+            "syntheticQuality": make_relative_path(figures_dir / "synthetic_quality.png", base_dir),
+            "robustness": make_relative_path(figures_dir / "robustness_summary.png", base_dir),
+        },
+        "selectedFeatureCount": int(selected_feature_table.shape[0]),
+        "topFeatures": dataframe_records(top_features[["feature", "combined_score", "family"]]),
+        "featureFamilies": dataframe_records(feature_family_summary),
+        "strategies": {
+            key: serialize_strategy_result(value) for key, value in strategy_results.items()
+        },
+        "syntheticQuality": {
+            "summary": round_metric_dict(synthetic_quality_summary),
+            "topDrift": dataframe_records(top_drift),
+        },
+        "robustness": {
+            "seeds": robustness_seeds,
+            "ctgan_epochs": robustness_ctgan_epochs,
+            "summary": dataframe_records(robustness_summary),
+        },
+        "conclusions": [
+            "Los datos reales siguen siendo la referencia de despliegue: maximizan balanced accuracy y ROC AUC.",
+            "CTGAN conserva parte de la señal discriminativa, pero no reemplaza al entrenamiento real en este dataset.",
+            "La familia TQWT domina la selección, lo que sugiere que la información multiescala es crítica para detectar Parkinson en la voz.",
+            "La deriva sintética más fuerte aparece en rasgos de jitter y en varias descomposiciones TQWT, coherente con la caída de rendimiento.",
+            "El escenario mixto responde a la pregunta práctica importante: el sintético puro empeora, pero puede seguir siendo útil como complemento experimental.",
+        ],
+    }
+
+    app_data_path = base_dir / "app-data.js"
+    app_data_path.write_text(
+        "window.APP_DATA = " + json.dumps(app_data, indent=2) + ";\n",
+        encoding="utf-8",
+    )
+
+
 def plot_feature_ranking(ranking: pd.DataFrame, figures_dir: Path) -> None:
     top = ranking.head(15).sort_values("combined_score", ascending=True)
     plt.figure(figsize=(10, 7))
@@ -499,60 +841,64 @@ def plot_feature_count_search(feature_count_summary: pd.DataFrame, figures_dir: 
     plt.close()
 
 
-def plot_model_comparison(
-    real_result: StrategyResult,
-    synthetic_result: StrategyResult,
-    figures_dir: Path,
-) -> None:
-    merged = real_result.summary[["model", "test_balanced_accuracy", "test_roc_auc"]].merge(
-        synthetic_result.summary[["model", "test_balanced_accuracy", "test_roc_auc"]],
-        on="model",
-        suffixes=("_real", "_synthetic"),
-    )
-    merged = merged.sort_values("test_balanced_accuracy_real", ascending=True)
-    positions = np.arange(len(merged))
-    width = 0.35
+def plot_feature_family_summary(feature_family_summary: pd.DataFrame, figures_dir: Path) -> None:
+    ordered = feature_family_summary.sort_values("count", ascending=True)
+    plt.figure(figsize=(9, 5.5))
+    plt.barh(ordered["family"], ordered["count"], color="#264653")
+    plt.xlabel("Number of selected features")
+    plt.ylabel("Feature family")
+    plt.title("Selected feature families")
+    plt.tight_layout()
+    plt.savefig(figures_dir / "feature_family_summary.png", dpi=200)
+    plt.close()
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
-    axes[0].barh(
-        positions - width / 2,
-        merged["test_balanced_accuracy_real"],
-        height=width,
-        label="Real",
-        color="#457b9d",
-    )
-    axes[0].barh(
-        positions + width / 2,
-        merged["test_balanced_accuracy_synthetic"],
-        height=width,
-        label="Synthetic",
-        color="#e76f51",
-    )
-    axes[0].set_title("Balanced accuracy")
-    axes[0].set_xlabel("Score")
-    axes[0].set_yticks(positions)
-    axes[0].set_yticklabels(merged["model"])
-    axes[0].legend(frameon=False)
+def plot_model_comparison(strategy_results: dict[str, StrategyResult], figures_dir: Path) -> None:
+    rows: list[dict[str, Any]] = []
+    for strategy_name, result in strategy_results.items():
+        table = result.summary[["model", "test_balanced_accuracy", "test_roc_auc"]].copy()
+        table["strategy"] = strategy_name
+        rows.extend(table.to_dict(orient="records"))
 
-    axes[1].barh(
-        positions - width / 2,
-        merged["test_roc_auc_real"],
-        height=width,
-        label="Real",
-        color="#457b9d",
-    )
-    axes[1].barh(
-        positions + width / 2,
-        merged["test_roc_auc_synthetic"],
-        height=width,
-        label="Synthetic",
-        color="#e76f51",
-    )
-    axes[1].set_title("ROC AUC")
-    axes[1].set_xlabel("Score")
+    combined = pd.DataFrame(rows)
+    models = combined["model"].drop_duplicates().tolist()
+    strategies = [name for name in ["real", "synthetic", "mixed"] if name in combined["strategy"].unique()]
+    x = np.arange(len(models))
+    width = 0.24
+    colors = {"real": "#457b9d", "synthetic": "#e76f51", "mixed": "#2a9d8f"}
 
-    fig.suptitle("Real vs synthetic training comparison")
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5), sharey=False)
+    for axis, metric, title in [
+        (axes[0], "test_balanced_accuracy", "Balanced accuracy"),
+        (axes[1], "test_roc_auc", "ROC AUC"),
+    ]:
+        for index, strategy_name in enumerate(strategies):
+            offsets = x + (index - (len(strategies) - 1) / 2) * width
+            values = [
+                float(
+                    combined.loc[
+                        (combined["model"] == model) & (combined["strategy"] == strategy_name),
+                        metric,
+                    ].iloc[0]
+                )
+                for model in models
+            ]
+            axis.bar(
+                offsets,
+                values,
+                width=width,
+                label=STRATEGY_LABELS[strategy_name],
+                color=colors[strategy_name],
+            )
+        axis.set_title(title)
+        axis.set_xticks(x)
+        axis.set_xticklabels(models, rotation=25, ha="right")
+        axis.set_ylim(0.45, 1.0)
+        axis.grid(axis="y", alpha=0.2)
+
+    axes[0].set_ylabel("Score")
+    axes[1].legend(frameon=False)
+    fig.suptitle("Model family performance across training strategies")
     plt.tight_layout()
     plt.savefig(figures_dir / "model_comparison.png", dpi=200)
     plt.close()
@@ -560,34 +906,26 @@ def plot_model_comparison(
 
 def plot_roc_curves(
     y_test: pd.Series,
-    real_result: StrategyResult,
-    synthetic_result: StrategyResult,
+    strategy_results: dict[str, StrategyResult],
     figures_dir: Path,
 ) -> None:
-    real_fpr, real_tpr, _ = roc_curve(y_test, real_result.best_probabilities)
-    synthetic_fpr, synthetic_tpr, _ = roc_curve(y_test, synthetic_result.best_probabilities)
-
     plt.figure(figsize=(7, 6))
-    plt.plot(
-        real_fpr,
-        real_tpr,
-        label=(
-            f"Real - {real_result.best_model_name} "
-            f"(AUC={real_result.best_metrics['roc_auc']:.3f})"
-        ),
-        color="#1d3557",
-        linewidth=2,
-    )
-    plt.plot(
-        synthetic_fpr,
-        synthetic_tpr,
-        label=(
-            f"Synthetic - {synthetic_result.best_model_name} "
-            f"(AUC={synthetic_result.best_metrics['roc_auc']:.3f})"
-        ),
-        color="#e76f51",
-        linewidth=2,
-    )
+    colors = {"real": "#1d3557", "synthetic": "#e76f51", "mixed": "#2a9d8f"}
+    for strategy_name in ["real", "synthetic", "mixed"]:
+        if strategy_name not in strategy_results:
+            continue
+        result = strategy_results[strategy_name]
+        fpr, tpr, _ = roc_curve(y_test, result.best_probabilities)
+        plt.plot(
+            fpr,
+            tpr,
+            label=(
+                f"{STRATEGY_LABELS[strategy_name]} - {result.best_model_name} "
+                f"(AUC={result.best_metrics['roc_auc']:.3f})"
+            ),
+            color=colors[strategy_name],
+            linewidth=2,
+        )
     plt.plot([0, 1], [0, 1], linestyle="--", color="#777777", linewidth=1)
     plt.xlabel("False positive rate")
     plt.ylabel("True positive rate")
@@ -600,28 +938,24 @@ def plot_roc_curves(
 
 def plot_confusion_matrices(
     y_test: pd.Series,
-    real_result: StrategyResult,
-    synthetic_result: StrategyResult,
+    strategy_results: dict[str, StrategyResult],
     figures_dir: Path,
 ) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
-    ConfusionMatrixDisplay.from_predictions(
-        y_test,
-        real_result.best_predictions,
-        ax=axes[0],
-        cmap="Blues",
-        colorbar=False,
-    )
-    axes[0].set_title(f"Real - {real_result.best_model_name}")
+    strategy_names = [name for name in ["real", "synthetic", "mixed"] if name in strategy_results]
+    fig, axes = plt.subplots(1, len(strategy_names), figsize=(5 * len(strategy_names), 4.5))
+    axes = np.atleast_1d(axes)
+    cmap_map = {"real": "Blues", "synthetic": "Oranges", "mixed": "Greens"}
 
-    ConfusionMatrixDisplay.from_predictions(
-        y_test,
-        synthetic_result.best_predictions,
-        ax=axes[1],
-        cmap="Oranges",
-        colorbar=False,
-    )
-    axes[1].set_title(f"Synthetic - {synthetic_result.best_model_name}")
+    for axis, strategy_name in zip(axes, strategy_names):
+        result = strategy_results[strategy_name]
+        ConfusionMatrixDisplay.from_predictions(
+            y_test,
+            result.best_predictions,
+            ax=axis,
+            cmap=cmap_map[strategy_name],
+            colorbar=False,
+        )
+        axis.set_title(f"{STRATEGY_LABELS[strategy_name]} - {result.best_model_name}")
 
     plt.tight_layout()
     plt.savefig(figures_dir / "confusion_matrices.png", dpi=200)
@@ -640,21 +974,56 @@ def plot_synthetic_quality(quality: pd.DataFrame, figures_dir: Path) -> None:
     plt.close()
 
 
+def plot_robustness_summary(robustness_summary: pd.DataFrame, figures_dir: Path) -> None:
+    ordered = robustness_summary.copy()
+    ordered["label"] = ordered["strategy"].map(STRATEGY_LABELS)
+    colors = {"real": "#457b9d", "synthetic": "#e76f51", "mixed": "#2a9d8f"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
+    for axis, metric, title in [
+        (axes[0], "balanced_accuracy", "Balanced accuracy stability"),
+        (axes[1], "roc_auc", "ROC AUC stability"),
+    ]:
+        axis.bar(
+            ordered["label"],
+            ordered[f"{metric}_mean"],
+            yerr=ordered[f"{metric}_std"],
+            color=[colors[name] for name in ordered["strategy"]],
+            capsize=6,
+        )
+        axis.set_title(title)
+        axis.set_ylabel("Mean ± std")
+        axis.set_ylim(0.45, 1.0)
+        axis.grid(axis="y", alpha=0.2)
+
+    plt.tight_layout()
+    plt.savefig(figures_dir / "robustness_summary.png", dpi=200)
+    plt.close()
+
+
 def write_report(
     output_dir: Path,
     selected_features: list[str],
     feature_count_summary: pd.DataFrame,
     ranking: pd.DataFrame,
+    feature_family_summary: pd.DataFrame,
     real_result: StrategyResult,
     synthetic_result: StrategyResult,
+    mixed_result: StrategyResult,
     synthetic_quality: pd.DataFrame,
     synthetic_quality_summary: dict[str, float],
+    robustness_summary: pd.DataFrame,
     dataset_summary: dict[str, Any],
     ctgan_epochs: int,
+    robustness_ctgan_epochs: int,
+    robustness_seeds: list[int],
 ) -> None:
     real_table = real_result.summary.copy()
     synthetic_table = synthetic_result.summary.copy()
-    for frame in (real_table, synthetic_table):
+    mixed_table = mixed_result.summary.copy()
+    robustness_table = robustness_summary.copy()
+    family_table = feature_family_summary.copy()
+    for frame in (real_table, synthetic_table, mixed_table, robustness_table, family_table):
         numeric_columns = frame.select_dtypes(include=[np.number]).columns
         frame[numeric_columns] = frame[numeric_columns].round(4)
 
@@ -665,10 +1034,12 @@ def write_report(
 
     best_real = real_result.best_metrics
     best_synthetic = synthetic_result.best_metrics
+    best_mixed = mixed_result.best_metrics
     performance_gap = {
         metric: best_real[metric] - best_synthetic[metric]
-        for metric in ["balanced_accuracy", "recall", "f1", "roc_auc"]
+        for metric in ["balanced_accuracy", "sensitivity", "f1", "roc_auc"]
     }
+    dominant_family = str(family_table.iloc[0]["family"])
 
     report = f"""# Parkinson voice classification analysis
 
@@ -686,22 +1057,34 @@ def write_report(
 3. The number of retained features was chosen with 5-fold CV and balanced accuracy.
 4. Five classical models were tuned on the reduced feature space.
 5. CTGAN was then fitted only on the selected features of the training split plus the target, and a purely synthetic training set with the same class counts was generated.
-6. Both strategies were evaluated on the same real hold-out test split.
+6. A third mixed strategy was added by concatenating real and synthetic training rows.
+7. A lightweight robustness analysis repeated the selected strategies across seeds {robustness_seeds}.
 
 ## Selected feature subset
 
 - Selected feature count: {len(selected_features)}
 - Selected features: {", ".join(selected_features)}
+- Dominant family: {dominant_family}
+
+### Family-level interpretation
+
+The selected variables are not random column names: they form coherent acoustic families. TQWT descriptors dominate the subset, which suggests that multi-scale irregularities in the voice carry strong information about Parkinson-related degradation. MFCC and dynamic-energy features contribute complementary spectral and temporal structure, while jitter/shimmer variables capture cycle-to-cycle instability in phonation. Intensity appears less often, but it still adds a global energetic cue.
+
+{family_table.to_markdown(index=False)}
 
 ![Feature ranking](figures/feature_ranking.png)
 
 ![Feature count selection](figures/feature_count_selection.png)
 
+![Feature families](figures/feature_family_summary.png)
+
 ## Real-data strategy
 
-- Best CV model: {real_result.best_model_name}
+- CV-selected model: {real_result.best_model_name}
+- Best hold-out model by balanced accuracy: {real_result.holdout_best_model_name}
 - Hold-out balanced accuracy: {best_real['balanced_accuracy']:.4f}
-- Hold-out recall: {best_real['recall']:.4f}
+- Hold-out sensitivity: {best_real['sensitivity']:.4f}
+- Hold-out specificity: {best_real['specificity']:.4f}
 - Hold-out F1: {best_real['f1']:.4f}
 - Hold-out ROC AUC: {best_real['roc_auc']:.4f}
 
@@ -710,28 +1093,50 @@ def write_report(
 ## CTGAN synthetic-data strategy
 
 - CTGAN epochs: {ctgan_epochs}
-- Best CV model: {synthetic_result.best_model_name}
+- CV-selected model: {synthetic_result.best_model_name}
+- Best hold-out model by balanced accuracy: {synthetic_result.holdout_best_model_name}
 - Hold-out balanced accuracy: {best_synthetic['balanced_accuracy']:.4f}
-- Hold-out recall: {best_synthetic['recall']:.4f}
+- Hold-out sensitivity: {best_synthetic['sensitivity']:.4f}
+- Hold-out specificity: {best_synthetic['specificity']:.4f}
 - Hold-out F1: {best_synthetic['f1']:.4f}
 - Hold-out ROC AUC: {best_synthetic['roc_auc']:.4f}
 
 {synthetic_table.to_markdown(index=False)}
 
+## Mixed real + CTGAN strategy
+
+- CV-selected model: {mixed_result.best_model_name}
+- Best hold-out model by balanced accuracy: {mixed_result.holdout_best_model_name}
+- Hold-out balanced accuracy: {best_mixed['balanced_accuracy']:.4f}
+- Hold-out sensitivity: {best_mixed['sensitivity']:.4f}
+- Hold-out specificity: {best_mixed['specificity']:.4f}
+- Hold-out F1: {best_mixed['f1']:.4f}
+- Hold-out ROC AUC: {best_mixed['roc_auc']:.4f}
+
+{mixed_table.to_markdown(index=False)}
+
 ## Comparison
 
 - Balanced-accuracy gap (real - synthetic): {performance_gap['balanced_accuracy']:.4f}
-- Recall gap (real - synthetic): {performance_gap['recall']:.4f}
+- Sensitivity gap (real - synthetic): {performance_gap['sensitivity']:.4f}
 - F1 gap (real - synthetic): {performance_gap['f1']:.4f}
 - ROC AUC gap (real - synthetic): {performance_gap['roc_auc']:.4f}
 
-The real-data strategy should be treated as the deployment reference if the synthetic strategy underperforms on recall or balanced accuracy. The synthetic model is still useful to discuss privacy-preserving augmentation, stress testing, and how much predictive signal CTGAN preserves after compression to the selected feature space.
+The real-data strategy should still be treated as the deployment reference. The synthetic strategy is useful precisely because it underperforms: it shows that CTGAN preserves part of the signal but not enough to replace real clinical data. The mixed strategy answers the practical question that matters for the presentation: even when synthetic-only training is weaker, synthetic rows may still serve as an auxiliary experimental resource.
 
 ![Model comparison](figures/model_comparison.png)
 
 ![ROC curves](figures/roc_curves.png)
 
 ![Confusion matrices](figures/confusion_matrices.png)
+
+## Robustness across seeds
+
+The table below repeats the CV-selected model family for each strategy over seeds {robustness_seeds}. This is not a full nested re-tuning study; it is a stability check designed to estimate how much the conclusions move when the train/test split and CTGAN fitting are perturbed. For runtime reasons, CTGAN was retrained with {robustness_ctgan_epochs} epochs in this robustness block.
+
+{robustness_table.to_markdown(index=False)}
+
+![Robustness summary](figures/robustness_summary.png)
 
 ## Synthetic data quality
 
@@ -748,7 +1153,7 @@ The drift values below indicate which selected variables are hardest for CTGAN t
 
 ## Conclusion
 
-The complete comparison is now reproducible from a single script. If the real-data model wins by a clear margin, the interpretation is straightforward: synthetic data preserves part of the decision boundary, but not all of it. If the gap is small, you can argue that the selected voice descriptors retain enough structure for CTGAN to train a clinically useful proxy model.
+The complete comparison is now reproducible from a single script. The mature interpretation is not that CTGAN "failed", but that it preserved only part of the clinically useful signal. In this dataset, the combination of limited sample size and very high-dimensional multiscale voice descriptors makes high-fidelity synthetic generation difficult. That weakness strengthens the oral defence: it shows that you are not overselling synthetic data, and that you understand where the method helps and where it does not replace real evidence.
 """
 
     (output_dir / "analysis_report.md").write_text(report, encoding="utf-8")
@@ -776,13 +1181,20 @@ def main() -> None:
     )
 
     log("Ranking features...")
-    ranking = rank_features(X_train, y_train)
-    best_feature_count, feature_count_summary = choose_feature_count(X_train, y_train, ranking)
+    ranking = rank_features(X_train, y_train, random_seed=SEED)
+    best_feature_count, feature_count_summary = choose_feature_count(
+        X_train,
+        y_train,
+        ranking,
+        random_seed=SEED,
+    )
     selected_features = ranking.head(best_feature_count)["feature"].tolist()
     log(f"Selected {best_feature_count} features.")
 
     X_train_selected = X_train[selected_features].copy()
     X_test_selected = X_test[selected_features].copy()
+    selected_feature_table = ranking.head(best_feature_count).copy()
+    feature_family_summary = summarize_feature_families(selected_feature_table)
 
     log("Training classical models on real data...")
     real_result = tune_and_evaluate_models(
@@ -791,6 +1203,7 @@ def main() -> None:
         y_train,
         X_test_selected,
         y_test,
+        random_seed=SEED,
     )
 
     log("Generating the synthetic training dataset...")
@@ -798,6 +1211,7 @@ def main() -> None:
         X_train_selected,
         y_train,
         epochs=args.ctgan_epochs,
+        random_seed=SEED,
     )
     X_synthetic = synthetic_train[selected_features].copy()
     y_synthetic = synthetic_train["class"].astype(int)
@@ -809,6 +1223,19 @@ def main() -> None:
         y_synthetic,
         X_test_selected,
         y_test,
+        random_seed=SEED,
+    )
+
+    X_mixed = pd.concat([X_train_selected, X_synthetic], ignore_index=True)
+    y_mixed = pd.concat([y_train.reset_index(drop=True), y_synthetic], ignore_index=True)
+    log("Training classical models on mixed data...")
+    mixed_result = tune_and_evaluate_models(
+        "mixed",
+        X_mixed,
+        y_mixed,
+        X_test_selected,
+        y_test,
+        random_seed=SEED,
     )
 
     log("Computing synthetic-quality diagnostics and plots...")
@@ -817,20 +1244,49 @@ def main() -> None:
         X_synthetic,
     )
 
+    strategy_specs = {
+        result.name: {
+            "model": str(result.summary.iloc[0]["model"]),
+            "best_params": str(result.summary.iloc[0]["best_params"]),
+        }
+        for result in [real_result, synthetic_result, mixed_result]
+    }
+    log("Running lightweight robustness analysis across multiple seeds...")
+    robustness_runs, robustness_summary = run_robustness_analysis(
+        X,
+        y,
+        selected_feature_count=best_feature_count,
+        strategy_specs=strategy_specs,
+        test_size=args.test_size,
+        ctgan_epochs=args.robustness_ctgan_epochs,
+        seeds=args.robustness_seeds,
+    )
+
+    strategy_results = {
+        "real": real_result,
+        "synthetic": synthetic_result,
+        "mixed": mixed_result,
+    }
+
     plot_feature_ranking(ranking, figures_dir)
     plot_feature_count_search(feature_count_summary, figures_dir)
-    plot_model_comparison(real_result, synthetic_result, figures_dir)
-    plot_roc_curves(y_test, real_result, synthetic_result, figures_dir)
-    plot_confusion_matrices(y_test, real_result, synthetic_result, figures_dir)
+    plot_feature_family_summary(feature_family_summary, figures_dir)
+    plot_model_comparison(strategy_results, figures_dir)
+    plot_roc_curves(y_test, strategy_results, figures_dir)
+    plot_confusion_matrices(y_test, strategy_results, figures_dir)
     plot_synthetic_quality(synthetic_quality, figures_dir)
+    plot_robustness_summary(robustness_summary, figures_dir)
 
-    selected_feature_table = ranking.head(best_feature_count).copy()
     selected_feature_table.to_csv(output_dir / "selected_features.csv", index=False)
+    feature_family_summary.to_csv(output_dir / "feature_family_summary.csv", index=False)
     feature_count_summary.to_csv(output_dir / "feature_count_search.csv", index=False)
     real_result.summary.to_csv(output_dir / "real_model_results.csv", index=False)
     synthetic_result.summary.to_csv(output_dir / "synthetic_model_results.csv", index=False)
+    mixed_result.summary.to_csv(output_dir / "mixed_model_results.csv", index=False)
     synthetic_quality.to_csv(output_dir / "synthetic_quality.csv", index=False)
     synthetic_train.to_csv(output_dir / "synthetic_training_data.csv", index=False)
+    robustness_runs.to_csv(output_dir / "robustness_runs.csv", index=False)
+    robustness_summary.to_csv(output_dir / "robustness_summary.csv", index=False)
 
     dataset_summary = {
         "rows": int(len(X)),
@@ -844,16 +1300,35 @@ def main() -> None:
         "dataset_summary": dataset_summary,
         "selected_feature_count": best_feature_count,
         "selected_features": selected_features,
-        "real_best_model": real_result.best_model_name,
-        "real_best_metrics": real_result.best_metrics,
-        "synthetic_best_model": synthetic_result.best_model_name,
-        "synthetic_best_metrics": synthetic_result.best_metrics,
+        "feature_family_summary": dataframe_records(feature_family_summary),
+        "strategies": {
+            key: serialize_strategy_result(value) for key, value in strategy_results.items()
+        },
         "synthetic_quality_summary": synthetic_quality_summary,
         "ctgan_epochs": args.ctgan_epochs,
+        "robustness": {
+            "seeds": args.robustness_seeds,
+            "ctgan_epochs": args.robustness_ctgan_epochs,
+            "summary": dataframe_records(robustness_summary),
+        },
     }
     (output_dir / "summary.json").write_text(
         json.dumps(comparison_summary, indent=2),
         encoding="utf-8",
+    )
+
+    write_app_data(
+        base_dir=base_dir,
+        output_dir=output_dir,
+        dataset_summary=dataset_summary,
+        selected_feature_table=selected_feature_table,
+        feature_family_summary=feature_family_summary,
+        strategy_results=strategy_results,
+        synthetic_quality=synthetic_quality,
+        synthetic_quality_summary=synthetic_quality_summary,
+        robustness_summary=robustness_summary,
+        robustness_seeds=args.robustness_seeds,
+        robustness_ctgan_epochs=args.robustness_ctgan_epochs,
     )
 
     write_report(
@@ -861,17 +1336,23 @@ def main() -> None:
         selected_features=selected_features,
         feature_count_summary=feature_count_summary,
         ranking=ranking,
+        feature_family_summary=feature_family_summary,
         real_result=real_result,
         synthetic_result=synthetic_result,
+        mixed_result=mixed_result,
         synthetic_quality=synthetic_quality,
         synthetic_quality_summary=synthetic_quality_summary,
+        robustness_summary=robustness_summary,
         dataset_summary=dataset_summary,
         ctgan_epochs=args.ctgan_epochs,
+        robustness_ctgan_epochs=args.robustness_ctgan_epochs,
+        robustness_seeds=args.robustness_seeds,
     )
 
     print(f"Analysis completed. Outputs written to: {output_dir}")
     print(f"Best real-data model: {real_result.best_model_name} -> {real_result.best_metrics}")
     print(f"Best synthetic-data model: {synthetic_result.best_model_name} -> {synthetic_result.best_metrics}")
+    print(f"Best mixed-data model: {mixed_result.best_model_name} -> {mixed_result.best_metrics}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,9 @@
-{
-  "dataset_summary": {
+window.APP_DATA = {
+  "project": {
+    "title": "ParkinVoice: Parkinson detection from voice descriptors",
+    "subtitle": "Comparative analysis between classical models trained on real data, purely synthetic CTGAN data, and a mixed scenario."
+  },
+  "dataset": {
     "rows": 756,
     "features": 753,
     "class_counts": {
@@ -9,50 +13,87 @@
     "train_rows": 604,
     "test_rows": 152
   },
-  "selected_feature_count": 40,
-  "selected_features": [
-    "std_delta_delta_log_energy",
-    "std_delta_log_energy",
-    "std_6th_delta_delta",
-    "tqwt_entropy_log_dec_12",
-    "std_8th_delta_delta",
-    "tqwt_TKEO_std_dec_13",
-    "std_9th_delta_delta",
-    "tqwt_TKEO_mean_dec_12",
-    "std_7th_delta_delta",
-    "std_6th_delta",
-    "mean_MFCC_2nd_coef",
-    "tqwt_entropy_shannon_dec_13",
-    "tqwt_minValue_dec_13",
-    "tqwt_TKEO_mean_dec_13",
-    "tqwt_stdValue_dec_12",
-    "rapJitter",
-    "std_8th_delta",
-    "tqwt_entropy_log_dec_16",
-    "tqwt_entropy_log_dec_13",
-    "tqwt_entropy_log_dec_35",
-    "tqwt_stdValue_dec_13",
-    "tqwt_TKEO_std_dec_12",
-    "tqwt_energy_dec_27",
-    "std_7th_delta",
-    "minIntensity",
-    "tqwt_energy_dec_26",
-    "tqwt_kurtosisValue_dec_18",
-    "apq11Shimmer",
-    "tqwt_entropy_log_dec_11",
-    "tqwt_maxValue_dec_12",
-    "tqwt_entropy_shannon_dec_12",
-    "std_10th_delta_delta",
-    "tqwt_medianValue_dec_8",
-    "tqwt_entropy_shannon_dec_14",
-    "tqwt_TKEO_mean_dec_16",
-    "tqwt_medianValue_dec_26",
-    "tqwt_entropy_log_dec_27",
-    "tqwt_TKEO_std_dec_7",
-    "tqwt_stdValue_dec_15",
-    "locAbsJitter"
+  "methodology": [
+    "Estratificar train/test antes de cualquier selecci\u00f3n de variables.",
+    "Rankear variables con informaci\u00f3n mutua e importancia de RandomForest.",
+    "Seleccionar un subconjunto compacto de rasgos vocales.",
+    "Comparar entrenamiento con datos reales, sint\u00e9ticos y mixtos sobre el mismo test real.",
+    "Analizar deriva de CTGAN y estabilidad de los resultados con varias semillas."
   ],
-  "feature_family_summary": [
+  "figures": {
+    "featureRanking": "results/figures/feature_ranking.png",
+    "featureCount": "results/figures/feature_count_selection.png",
+    "featureFamilies": "results/figures/feature_family_summary.png",
+    "modelComparison": "results/figures/model_comparison.png",
+    "rocCurves": "results/figures/roc_curves.png",
+    "confusionMatrices": "results/figures/confusion_matrices.png",
+    "syntheticQuality": "results/figures/synthetic_quality.png",
+    "robustness": "results/figures/robustness_summary.png"
+  },
+  "selectedFeatureCount": 40,
+  "topFeatures": [
+    {
+      "feature": "std_delta_delta_log_energy",
+      "combined_score": 1.0,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "std_delta_log_energy",
+      "combined_score": 0.9367,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "std_6th_delta_delta",
+      "combined_score": 0.777,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "tqwt_entropy_log_dec_12",
+      "combined_score": 0.7383,
+      "family": "TQWT / wavelet"
+    },
+    {
+      "feature": "std_8th_delta_delta",
+      "combined_score": 0.6973,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "tqwt_TKEO_std_dec_13",
+      "combined_score": 0.6916,
+      "family": "TQWT / wavelet"
+    },
+    {
+      "feature": "std_9th_delta_delta",
+      "combined_score": 0.6809,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "tqwt_TKEO_mean_dec_12",
+      "combined_score": 0.6657,
+      "family": "TQWT / wavelet"
+    },
+    {
+      "feature": "std_7th_delta_delta",
+      "combined_score": 0.6601,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "std_6th_delta",
+      "combined_score": 0.6583,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "mean_MFCC_2nd_coef",
+      "combined_score": 0.6362,
+      "family": "MFCC / energ\u00eda / din\u00e1micas"
+    },
+    {
+      "feature": "tqwt_entropy_shannon_dec_13",
+      "combined_score": 0.607,
+      "family": "TQWT / wavelet"
+    }
+  ],
+  "featureFamilies": [
     {
       "family": "TQWT / wavelet",
       "count": 25,
@@ -400,13 +441,52 @@
       ]
     }
   },
-  "synthetic_quality_summary": {
-    "mean_ks_stat": 0.3040149006622517,
-    "max_ks_stat": 0.847682119205298,
-    "mean_normalized_wasserstein": 0.5975669145700809,
-    "correlation_mae": 0.3133946934534979
+  "syntheticQuality": {
+    "summary": {
+      "mean_ks_stat": 0.304,
+      "max_ks_stat": 0.8477,
+      "mean_normalized_wasserstein": 0.5976,
+      "correlation_mae": 0.3134
+    },
+    "topDrift": [
+      {
+        "feature": "locAbsJitter",
+        "ks_stat": 0.8477,
+        "wasserstein_normalized": 1.3429,
+        "family": "Jitter / shimmer"
+      },
+      {
+        "feature": "rapJitter",
+        "ks_stat": 0.7881,
+        "wasserstein_normalized": 0.3896,
+        "family": "Jitter / shimmer"
+      },
+      {
+        "feature": "tqwt_TKEO_std_dec_12",
+        "ks_stat": 0.606,
+        "wasserstein_normalized": 0.0852,
+        "family": "TQWT / wavelet"
+      },
+      {
+        "feature": "tqwt_TKEO_mean_dec_12",
+        "ks_stat": 0.5546,
+        "wasserstein_normalized": 0.136,
+        "family": "TQWT / wavelet"
+      },
+      {
+        "feature": "tqwt_TKEO_mean_dec_13",
+        "ks_stat": 0.548,
+        "wasserstein_normalized": 0.2298,
+        "family": "TQWT / wavelet"
+      },
+      {
+        "feature": "tqwt_medianValue_dec_8",
+        "ks_stat": 0.4851,
+        "wasserstein_normalized": 7.3965,
+        "family": "TQWT / wavelet"
+      }
+    ]
   },
-  "ctgan_epochs": 50,
   "robustness": {
     "seeds": [
       13,
@@ -469,5 +549,12 @@
         "roc_auc_std": 0.1078
       }
     ]
-  }
-}
+  },
+  "conclusions": [
+    "Los datos reales siguen siendo la referencia de despliegue: maximizan balanced accuracy y ROC AUC.",
+    "CTGAN conserva parte de la se\u00f1al discriminativa, pero no reemplaza al entrenamiento real en este dataset.",
+    "La familia TQWT domina la selecci\u00f3n, lo que sugiere que la informaci\u00f3n multiescala es cr\u00edtica para detectar Parkinson en la voz.",
+    "La deriva sint\u00e9tica m\u00e1s fuerte aparece en rasgos de jitter y en varias descomposiciones TQWT, coherente con la ca\u00edda de rendimiento.",
+    "El escenario mixto responde a la pregunta pr\u00e1ctica importante: el sint\u00e9tico puro empeora, pero puede seguir siendo \u00fatil como complemento experimental."
+  ]
+};

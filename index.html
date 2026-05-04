@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ParkinVoice | Visualización del proyecto</title>
+  <meta name="description" content="App estática para explorar el proyecto ParkinVoice: selección de características, comparación real vs CTGAN y conclusiones clínicas." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero__eyebrow">Bioinformática y Medicina · Grado en Inteligencia Artificial · UDC</div>
+      <div class="hero__content">
+        <div>
+          <p class="hero__kicker">Aplicación estática de presentación</p>
+          <h1>ParkinVoice</h1>
+          <p class="hero__lead" id="hero-subtitle">
+            Comparativa entre modelos clásicos entrenados con datos reales, datos sintéticos CTGAN y un escenario mixto.
+          </p>
+        </div>
+        <div class="hero__meta">
+          <div class="meta-card">
+            <span class="meta-card__label">Dataset</span>
+            <strong id="dataset-size">756 muestras</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-card__label">Variables</span>
+            <strong id="feature-count">753 rasgos</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-card__label">Subset final</span>
+            <strong id="selected-feature-count">40 características</strong>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="screen-nav">
+      <a href="#pantalla-problema">01 Problema y dataset</a>
+      <a href="#pantalla-features">02 Selección de características</a>
+      <a href="#pantalla-comparacion">03 Real vs CTGAN</a>
+      <a href="#pantalla-conclusion">04 Conclusión clínica/técnica</a>
+    </nav>
+
+    <main>
+      <section class="screen" id="pantalla-problema">
+        <div class="screen__header">
+          <p class="screen__eyebrow">Pantalla 1</p>
+          <h2>Problema y dataset</h2>
+          <p class="screen__intro">
+            El objetivo es detectar Parkinson a partir de descriptores vocales y entender qué se pierde cuando sustituimos datos reales por datos sintéticos.
+          </p>
+        </div>
+        <div class="stats-grid" id="dataset-stats"></div>
+        <div class="split-layout">
+          <article class="panel panel--accent">
+            <h3>Distribución de clases</h3>
+            <div id="class-distribution"></div>
+          </article>
+          <article class="panel">
+            <h3>Metodología resumida</h3>
+            <ol class="timeline" id="methodology-list"></ol>
+          </article>
+        </div>
+      </section>
+
+      <section class="screen" id="pantalla-features">
+        <div class="screen__header">
+          <p class="screen__eyebrow">Pantalla 2</p>
+          <h2>Selección de características</h2>
+          <p class="screen__intro">
+            El interés no está en enumerar columnas: está en interpretar familias acústicas con significado fisiológico.
+          </p>
+        </div>
+        <div class="split-layout split-layout--wide">
+          <article class="panel">
+            <h3>Familias seleccionadas</h3>
+            <div class="family-grid" id="feature-family-grid"></div>
+          </article>
+          <article class="panel">
+            <h3>Top features</h3>
+            <div class="chip-list" id="top-features"></div>
+          </article>
+        </div>
+        <div class="figure-grid figure-grid--three">
+          <figure class="figure-card">
+            <img id="figure-feature-ranking" alt="Ranking de variables" />
+            <figcaption>Ranking de relevancia</figcaption>
+          </figure>
+          <figure class="figure-card">
+            <img id="figure-feature-count" alt="Selección del número de variables" />
+            <figcaption>Búsqueda del tamaño del subconjunto</figcaption>
+          </figure>
+          <figure class="figure-card">
+            <img id="figure-feature-families" alt="Familias de variables" />
+            <figcaption>Lectura por familias acústicas</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="screen" id="pantalla-comparacion">
+        <div class="screen__header">
+          <p class="screen__eyebrow">Pantalla 3</p>
+          <h2>Comparación real vs CTGAN</h2>
+          <p class="screen__intro">
+            Esta pantalla responde a la pregunta clave del proyecto: cuánto rendimiento conservamos cuando entrenamos con datos sintéticos y si el escenario mixto compensa parte de la pérdida.
+          </p>
+        </div>
+        <div class="strategy-grid" id="strategy-grid"></div>
+        <article class="panel panel--accent">
+          <h3>Estabilidad con varias semillas</h3>
+          <div id="robustness-summary"></div>
+        </article>
+        <div class="figure-grid figure-grid--three">
+          <figure class="figure-card">
+            <img id="figure-model-comparison" alt="Comparación de estrategias" />
+            <figcaption>Modelos y estrategias</figcaption>
+          </figure>
+          <figure class="figure-card">
+            <img id="figure-roc-curves" alt="Curvas ROC" />
+            <figcaption>Curvas ROC sobre test real</figcaption>
+          </figure>
+          <figure class="figure-card">
+            <img id="figure-confusion-matrices" alt="Matrices de confusión" />
+            <figcaption>Matrices de confusión</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="screen" id="pantalla-conclusion">
+        <div class="screen__header">
+          <p class="screen__eyebrow">Pantalla 4</p>
+          <h2>Conclusión clínica y técnica</h2>
+          <p class="screen__intro">
+            La debilidad de CTGAN no es un problema narrativo: es parte de la contribución del proyecto porque acota hasta dónde llega el dato sintético en un problema clínico realista.
+          </p>
+        </div>
+        <div class="split-layout split-layout--wide">
+          <article class="panel">
+            <h3>Deriva sintética más fuerte</h3>
+            <div id="drift-list"></div>
+          </article>
+          <article class="panel panel--accent">
+            <h3>Lectura final para la defensa</h3>
+            <ul class="insight-list" id="conclusion-list"></ul>
+          </article>
+        </div>
+        <div class="figure-grid figure-grid--two">
+          <figure class="figure-card">
+            <img id="figure-synthetic-quality" alt="Calidad de datos sintéticos" />
+            <figcaption>Variables donde CTGAN deriva más</figcaption>
+          </figure>
+          <figure class="figure-card">
+            <img id="figure-robustness" alt="Robustez por semillas" />
+            <figcaption>Robustez media ± desviación</figcaption>
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer-note">
+      <p>
+        Esta app no recalcula modelos en el navegador. Solo consume resultados ya generados por <code>analysis_parkinson.py</code> y está pensada para exposición y despliegue sencillo en GitHub Pages.
+      </p>
+    </footer>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
