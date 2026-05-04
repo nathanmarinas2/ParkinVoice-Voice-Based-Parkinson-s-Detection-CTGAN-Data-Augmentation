@@ -17,7 +17,7 @@ Analizar la detección de Parkinson a partir de características acústicas de l
 
 ## Metodología resumida
 
-1. Carga del dataset `pd_speech_features.csv` y eliminación de la columna `id`.
+1. Carga del dataset `data/pd_speech_features.csv` y eliminación de la columna `id`.
 2. División estratificada train/test antes de cualquier selección de variables.
 3. Selección de características mediante una combinación de información mutua e importancia de RandomForest.
 4. Entrenamiento y comparación de varios modelos clásicos: Logistic Regression, SVM, KNN, RandomForest y Gradient Boosting.
@@ -34,6 +34,8 @@ Analizar la detección de Parkinson a partir de características acústicas de l
 python analysis_parkinson.py
 ```
 
+`analysis_parkinson.py` en la raíz es un wrapper de compatibilidad para poder seguir ejecutando el proyecto con el comando habitual. La implementación real del análisis está en `src/analysis_parkinson.py`.
+
 ### Ajustar CTGAN
 
 ```bash
@@ -42,18 +44,24 @@ python analysis_parkinson.py --ctgan-epochs 100 --robustness-ctgan-epochs 50
 
 ### Abrir la app estática
 
-Abre `index.html` en el navegador o publícala con GitHub Pages.
+Abre `index.html` en el navegador o publícala desde la carpeta `docs/` con GitHub Pages.
 
 ## Estructura del repositorio
 
 ```text
 .
 ├── analysis_parkinson.py
-├── app-data.js
-├── app.js
+├── data/
+│   └── pd_speech_features.csv
+├── docs/
+│   ├── app-data.js
+│   ├── app.js
+│   ├── index.html
+│   └── styles.css
 ├── index.html
-├── styles.css
-├── pd_speech_features.csv
+├── references/
+│   ├── ctgan.md
+│   └── enunciado.md
 ├── results/
 │   ├── analysis_report.md
 │   ├── summary.json
@@ -63,9 +71,18 @@ Abre `index.html` en el navegador o publícala con GitHub Pages.
 │   ├── robustness_summary.csv
 │   ├── feature_family_summary.csv
 │   └── figures/
+├── src/
+│   └── analysis_parkinson.py
 ├── requirements.txt
-└── enunciado.md
+└── .gitignore
 ```
+
+Notas sobre la estructura:
+
+- `analysis_parkinson.py` en la raíz actúa como punto de entrada cómodo para la entrega y la ejecución local.
+- `src/analysis_parkinson.py` contiene la lógica real de entrenamiento, evaluación y generación de artefactos.
+- `docs/` agrupa la app estática para despliegue sencillo en GitHub Pages.
+- `data/`, `results/` y `references/` separan claramente dataset, salidas reproducibles y material de contexto.
 
 ## Resultados clave
 
@@ -77,7 +94,7 @@ Abre `index.html` en el navegador o publícala con GitHub Pages.
 
 ## Enlaces
 
-- App local: [index.html](index.html)
+- App local: [docs/index.html](docs/index.html)
 - App desplegada: pendiente de publicar en GitHub Pages o servicio equivalente.
 - Zenodo: pendiente de generar el DOI de la release final.
 - Presentación del examen: pendiente de añadir el enlace final.
