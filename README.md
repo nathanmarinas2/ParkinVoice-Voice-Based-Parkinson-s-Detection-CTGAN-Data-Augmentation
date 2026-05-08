@@ -36,6 +36,8 @@ python analysis_parkinson.py
 
 `analysis_parkinson.py` en la raíz es un wrapper de compatibilidad para poder seguir ejecutando el proyecto con el comando habitual. La implementación real del análisis está en `src/analysis_parkinson.py`.
 
+El comando por defecto reproduce la configuración publicada en `results/`: CTGAN principal con 50 epochs y bloque de robustez con semillas `13, 42` usando CTGAN a 25 epochs.
+
 ### Ajustar CTGAN
 
 ```bash

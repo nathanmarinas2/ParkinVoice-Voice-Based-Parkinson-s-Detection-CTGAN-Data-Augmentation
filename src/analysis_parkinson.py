@@ -41,7 +41,9 @@ from sklearn.feature_selection import mutual_info_classif
 SEED = 42
 TEST_SIZE = 0.2
 FEATURE_CANDIDATES = [10, 20, 30, 40, 60]
-ROBUSTNESS_SEEDS = [13, 42, 97]
+CTGAN_EPOCHS = 50
+ROBUSTNESS_SEEDS = [13, 42]
+ROBUSTNESS_CTGAN_EPOCHS = 25
 SCORING = {
     "balanced_accuracy": "balanced_accuracy",
     "f1": "f1",
@@ -126,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ctgan-epochs",
         type=int,
-        default=150,
+        default=CTGAN_EPOCHS,
         help="Number of CTGAN training epochs.",
     )
     parser.add_argument(
@@ -139,7 +141,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--robustness-ctgan-epochs",
         type=int,
-        default=75,
+        default=ROBUSTNESS_CTGAN_EPOCHS,
         help=(
             "CTGAN epochs used during the repeated-seed robustness analysis. "
             "This is lighter than the main experiment to keep runtime bounded."
