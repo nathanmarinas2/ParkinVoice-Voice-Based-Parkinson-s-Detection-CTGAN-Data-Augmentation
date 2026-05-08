@@ -97,7 +97,7 @@ Notas sobre la estructura:
 ## Enlaces
 
 - App local: [docs/index.html](docs/index.html)
-- App desplegada: pendiente de publicar en GitHub Pages o servicio equivalente.
+- App desplegada: [ParkinVoice en GitHub Pages](https://nathanmarinas2.github.io/ParkinVoice-Voice-Based-Parkinson-s-Detection-CTGAN-Data-Augmentation/)
 - Zenodo: pendiente de generar el DOI de la release final.
 - Presentación del examen: pendiente de añadir el enlace final.
 
@@ -123,4 +123,4 @@ Las dependencias principales están listadas en `requirements.txt`:
 
 ## Nota de entrega
 
-Antes de la entrega final conviene completar los apartados pendientes de enlaces, añadir los nombres reales del grupo y generar una release etiquetada para asociarla con Zenodo.
+Antes de la entrega final conviene completar los enlaces pendientes de Zenodo y la presentación, además de generar una release etiquetada para asociarla con Zenodo.
