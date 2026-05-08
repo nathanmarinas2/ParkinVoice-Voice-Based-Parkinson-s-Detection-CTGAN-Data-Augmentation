@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -749,7 +750,23 @@ def write_app_data(
     ].copy()
     top_drift["family"] = top_drift["feature"].map(classify_feature_family)
 
+    app_dir.mkdir(parents=True, exist_ok=True)
     figures_dir = output_dir / "figures"
+    app_figures_dir = app_dir / "figures"
+    app_figures_dir.mkdir(parents=True, exist_ok=True)
+    figure_files = {
+        "featureRanking": "feature_ranking.png",
+        "featureCount": "feature_count_selection.png",
+        "featureFamilies": "feature_family_summary.png",
+        "modelComparison": "model_comparison.png",
+        "rocCurves": "roc_curves.png",
+        "confusionMatrices": "confusion_matrices.png",
+        "syntheticQuality": "synthetic_quality.png",
+        "robustness": "robustness_summary.png",
+    }
+    for filename in figure_files.values():
+        shutil.copy2(figures_dir / filename, app_figures_dir / filename)
+
     app_data = {
         "project": {
             "title": "ParkinVoice: Parkinson detection from voice descriptors",
@@ -767,14 +784,8 @@ def write_app_data(
             "Analizar deriva de CTGAN y estabilidad de los resultados con varias semillas.",
         ],
         "figures": {
-            "featureRanking": make_relative_path(figures_dir / "feature_ranking.png", app_dir),
-            "featureCount": make_relative_path(figures_dir / "feature_count_selection.png", app_dir),
-            "featureFamilies": make_relative_path(figures_dir / "feature_family_summary.png", app_dir),
-            "modelComparison": make_relative_path(figures_dir / "model_comparison.png", app_dir),
-            "rocCurves": make_relative_path(figures_dir / "roc_curves.png", app_dir),
-            "confusionMatrices": make_relative_path(figures_dir / "confusion_matrices.png", app_dir),
-            "syntheticQuality": make_relative_path(figures_dir / "synthetic_quality.png", app_dir),
-            "robustness": make_relative_path(figures_dir / "robustness_summary.png", app_dir),
+            key: make_relative_path(app_figures_dir / filename, app_dir)
+            for key, filename in figure_files.items()
         },
         "selectedFeatureCount": int(selected_feature_table.shape[0]),
         "topFeatures": dataframe_records(top_features[["feature", "combined_score", "family"]]),
@@ -800,7 +811,6 @@ def write_app_data(
         ],
     }
 
-    app_dir.mkdir(parents=True, exist_ok=True)
     app_data_path = app_dir / "app-data.js"
     app_data_path.write_text(
         "window.APP_DATA = " + json.dumps(app_data, indent=2) + ";\n",

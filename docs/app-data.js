@@ -21,14 +21,14 @@ window.APP_DATA = {
     "Analizar deriva de CTGAN y estabilidad de los resultados con varias semillas."
   ],
   "figures": {
-    "featureRanking": "../results/figures/feature_ranking.png",
-    "featureCount": "../results/figures/feature_count_selection.png",
-    "featureFamilies": "../results/figures/feature_family_summary.png",
-    "modelComparison": "../results/figures/model_comparison.png",
-    "rocCurves": "../results/figures/roc_curves.png",
-    "confusionMatrices": "../results/figures/confusion_matrices.png",
-    "syntheticQuality": "../results/figures/synthetic_quality.png",
-    "robustness": "../results/figures/robustness_summary.png"
+    "featureRanking": "figures/feature_ranking.png",
+    "featureCount": "figures/feature_count_selection.png",
+    "featureFamilies": "figures/feature_family_summary.png",
+    "modelComparison": "figures/model_comparison.png",
+    "rocCurves": "figures/roc_curves.png",
+    "confusionMatrices": "figures/confusion_matrices.png",
+    "syntheticQuality": "figures/synthetic_quality.png",
+    "robustness": "figures/robustness_summary.png"
   },
   "selectedFeatureCount": 40,
   "topFeatures": [
