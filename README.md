@@ -99,7 +99,7 @@ Notas sobre la estructura:
 - App local: [docs/index.html](docs/index.html)
 - App desplegada: [ParkinVoice en GitHub Pages](https://nathanmarinas2.github.io/ParkinVoice-Voice-Based-Parkinson-s-Detection-CTGAN-Data-Augmentation/)
 - Zenodo: pendiente de generar el DOI de la release final.
-- Presentación del examen: pendiente de añadir el enlace final.
+- Presentación del examen: (https://udcgal-my.sharepoint.com/:p:/g/personal/i_paris_udc_es/IQAlkylyyeJIQZ_YLXegghE0AT2G1f-09-kOOKCQRIHOKXc?e=HjCvmN)
 
 ## Archivos principales de salida
 
