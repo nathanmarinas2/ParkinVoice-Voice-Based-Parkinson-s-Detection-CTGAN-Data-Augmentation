@@ -98,7 +98,7 @@ Notas sobre la estructura:
 
 - App local: [docs/index.html](docs/index.html)
 - App desplegada: [ParkinVoice en GitHub Pages](https://nathanmarinas2.github.io/ParkinVoice-Voice-Based-Parkinson-s-Detection-CTGAN-Data-Augmentation/)
-- Zenodo: pendiente de generar el DOI de la release final.
+- Zenodo (release v1.0.0): https://doi.org/10.5281/zenodo.20241085
 - Presentación del examen: (https://udcgal-my.sharepoint.com/:p:/g/personal/i_paris_udc_es/IQAlkylyyeJIQZ_YLXegghE0AT2G1f-09-kOOKCQRIHOKXc?e=HjCvmN)
 
 ## Archivos principales de salida
@@ -123,4 +123,4 @@ Las dependencias principales están listadas en `requirements.txt`:
 
 ## Nota de entrega
 
-Antes de la entrega final conviene completar los enlaces pendientes de Zenodo y la presentación, además de generar una release etiquetada para asociarla con Zenodo.
+La release final está publicada y archivada en Zenodo. Si se hacen cambios posteriores, conviene generar una nueva release para mantener la trazabilidad del proyecto.
